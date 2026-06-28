@@ -107,7 +107,28 @@ def reconnaissance_menu():
         
         elif choice == 2:
             target = input("Masukkan domain: ")
-            subprocess.run(f"nslookup {target}", shell=True)
+            if shutil.which("nslookup") is not None:
+                subprocess.run(f"nslookup {target}", shell=True)
+            else:
+                print("[!] nslookup tidak ditemukan di sistem.")
+                # Fallback sederhana menggunakan resolver python
+                try:
+                    print(f"[*] Melakukan DNS lookup alternatif untuk {target}...")
+                    import socket
+                    ip = socket.gethostbyname(target)
+                    print(f"Target: {target}")
+                    print(f"Address: {ip}")
+                except Exception as e:
+                    print(f"[ERROR] Gagal melakukan lookup alternatif: {str(e)}")
+                
+                # Petunjuk install
+                prefix = os.environ.get('PREFIX', '')
+                if prefix or os.path.exists('/data/data/com.termux/files/usr/bin'):
+                    print("\n[Tips] Install di Termux dengan: pkg install dnsutils")
+                elif os.path.exists('/etc/debian_version'):
+                    print("\n[Tips] Install di Debian/Ubuntu/Kali dengan: sudo apt install dnsutils")
+                else:
+                    print("\n[Tips] Silakan install paket 'dnsutils' atau 'bind-utils' di distro Anda.")
         
         elif choice == 3:
             domain = input("Masukkan domain: ")

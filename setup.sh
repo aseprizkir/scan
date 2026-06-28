@@ -20,26 +20,26 @@ if [ "$ENV" = "termux" ]; then
     pkg update -y && pkg upgrade -y
     
     echo -e "\e[1;33m[*] Menginstall alat sistem di Termux...\e[0m"
-    pkg install -y git python nmap whois whatweb hydra tcpdump golang termux-api
+    pkg install -y git python nmap whois whatweb hydra tcpdump golang termux-api dnsutils
 else
     # Detect Linux distro package manager
     if command -v apt &> /dev/null; then
         echo -e "\e[1;33m[*] Melakukan apt update...\e[0m"
         sudo apt update -y
         echo -e "\e[1;33m[*] Menginstall alat sistem via apt...\e[0m"
-        sudo apt install -y git python3 python3-pip nmap whois whatweb hydra tcpdump golang
+        sudo apt install -y git python3 python3-pip nmap whois whatweb hydra tcpdump golang dnsutils
     elif command -v pacman &> /dev/null; then
         echo -e "\e[1;33m[*] Melakukan pacman update...\e[0m"
         sudo pacman -Syu --noconfirm
         echo -e "\e[1;33m[*] Menginstall alat sistem via pacman...\e[0m"
-        sudo pacman -S --noconfirm git python python-pip nmap whois hydra tcpdump go
+        sudo pacman -S --noconfirm git python python-pip nmap whois hydra tcpdump go bind
     elif command -v dnf &> /dev/null; then
         echo -e "\e[1;33m[*] Melakukan dnf update...\e[0m"
         sudo dnf update -y
         echo -e "\e[1;33m[*] Menginstall alat sistem via dnf...\e[0m"
-        sudo dnf install -y git python3 python3-pip nmap whois hydra tcpdump golang
+        sudo dnf install -y git python3 python3-pip nmap whois hydra tcpdump golang bind-utils
     else
-        echo -e "\e[1;31m[!] Package manager tidak didukung otomatis. Silakan install git, python3, nmap, whois, hydra, tcpdump, dan golang secara manual.\e[0m"
+        echo -e "\e[1;31m[!] Package manager tidak didukung otomatis. Silakan install git, python3, nmap, whois, hydra, tcpdump, dnsutils, dan golang secara manual.\e[0m"
     fi
 fi
 
