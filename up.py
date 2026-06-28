@@ -18,6 +18,11 @@ from rich.progress import Progress, BarColumn, TimeRemainingColumn, SpinnerColum
 from rich.status import Status
 from rich.markdown import Markdown
 
+# Tambahkan go bin path ke PATH agar tool go bisa terdeteksi
+go_bin_path = os.path.expanduser("~/go/bin")
+if go_bin_path not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + go_bin_path
+
 # Konfigurasi Telegram (gunakan environment variable)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8127930072:AAHwbMBROwSrXSRFTPL4RgdNunzrKqgisHU")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "5731047913")
@@ -72,18 +77,55 @@ def banner():
 def check_tool(tool_name):
     return shutil.which(tool_name) is not None
 
+def get_system_install_command(package_name):
+    is_termux = 'com.termux' in os.environ.get('PREFIX', '') or os.path.exists('/data/data/com.termux/files/usr/bin')
+    if is_termux:
+        return f"pkg install {package_name} -y"
+    else:
+        # Check package managers
+        if shutil.which("apt") is not None:
+            return f"sudo apt install {package_name} -y"
+        elif shutil.which("pacman") is not None:
+            return f"sudo pacman -S {package_name} --noconfirm"
+        elif shutil.which("dnf") is not None:
+            return f"sudo dnf install {package_name} -y"
+        else:
+            return None
+
 def install_tool(tool_name, install_command):
+    if not install_command:
+        console.print(f"[red]Gagal install {tool_name}: Package manager tidak didukung. Silakan install manual.[/red]")
+        return False
     console.print(f"[yellow]⏳ Menginstall {tool_name}...[/yellow]")
     try:
         if "go install" in install_command:
+            # check if go is installed, if not, try to install it first
+            if shutil.which("go") is None:
+                go_install_cmd = get_system_install_command("golang")
+                if go_install_cmd:
+                    console.print(f"[yellow]⏳ Go compiler tidak ditemukan, menginstall Go dahulu...[/yellow]")
+                    subprocess.run(go_install_cmd, shell=True)
+                else:
+                    console.print(f"[red]Go compiler tidak ditemukan dan tidak bisa diinstall otomatis. Silakan install Go terlebih dahulu.[/red]")
+                    return False
+            
             result = subprocess.run(install_command.split(), capture_output=True, text=True)
             if result.returncode == 0:
                 go_path = os.path.expanduser("~/go/bin")
                 if go_path not in os.environ["PATH"]:
                     os.environ["PATH"] += os.pathsep + go_path
                 return True
+            else:
+                console.print(f"[red]Gagal install {tool_name}: {result.stderr or result.stdout}[/red]")
+                return False
         else:
             result = subprocess.run(install_command, shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                # Mitigation for PEP 668: externally-managed-environment
+                if "pip install" in install_command and "externally-managed-environment" in result.stderr:
+                    console.print("[yellow]⚠️ Terdeteksi externally-managed-environment, mencoba dengan --break-system-packages...[/yellow]")
+                    fixed_cmd = install_command.replace("pip install", "pip install --break-system-packages")
+                    result = subprocess.run(fixed_cmd, shell=True, capture_output=True, text=True)
             return result.returncode == 0
     except Exception as e:
         console.print(f"[red]Error install {tool_name}: {str(e)}[/red]")
@@ -93,6 +135,34 @@ def ensure_tool(tool_name, install_command):
     if check_tool(tool_name):
         return True
     return install_tool(tool_name, install_command)
+
+def ensure_sqlmap():
+    # 1. Cek apakah perintah 'sqlmap' ada di PATH
+    if shutil.which("sqlmap") is not None:
+        return ["sqlmap"]
+    
+    # 2. Cek path umum untuk sqlmap.py
+    candidate_paths = [
+        os.path.expanduser("~/sqlmap/sqlmap.py"),
+        "./sqlmap/sqlmap.py",
+        "./sqlmap.py",
+        os.path.expanduser("~/sqlmap.py")
+    ]
+    for path in candidate_paths:
+        if os.path.exists(path):
+            return ["python3", path]
+            
+    # 3. Clone sqlmap jika tidak ditemukan
+    console.print("[yellow]⏳ sqlmap tidak ditemukan di sistem. Mencoba meng-clone dari github...[/yellow]")
+    sqlmap_dir = os.path.expanduser("~/sqlmap")
+    try:
+        subprocess.run(["git", "clone", "--depth", "1", "https://github.com/sqlmapproject/sqlmap.git", sqlmap_dir], check=True)
+        if os.path.exists(os.path.join(sqlmap_dir, "sqlmap.py")):
+            return ["python3", os.path.join(sqlmap_dir, "sqlmap.py")]
+    except Exception as e:
+        console.print(f"[red]Gagal clone sqlmap: {str(e)}[/red]")
+        
+    return None
 
 def detect_protocol(target):
     try:
@@ -104,7 +174,7 @@ def detect_protocol(target):
     return "http"
 
 def whois_lookup(target, mode="cepat"):
-    if not ensure_tool("whois", "pkg install whois -y"):
+    if not ensure_tool("whois", get_system_install_command("whois")):
         return
 
     console.print("[yellow]⏳ Ngecek WHOIS...[/yellow]")
@@ -122,7 +192,7 @@ def whois_lookup(target, mode="cepat"):
         console.print(f"[red]Error: {str(e)}[/red]")
 
 def whatweb_scan(target, mode="cepat"):
-    if not ensure_tool("whatweb", "pkg install whatweb -y"):
+    if not ensure_tool("whatweb", get_system_install_command("whatweb")):
         return
 
     console.print("[yellow]⏳ Ngecek WhatWeb...[/yellow]")
@@ -140,7 +210,7 @@ def whatweb_scan(target, mode="cepat"):
         console.print(f"[red]Error: {str(e)}[/red]")
 
 def nmap_scan(target, mode="cepat"):
-    if not ensure_tool("nmap", "pkg install nmap -y"):
+    if not ensure_tool("nmap", get_system_install_command("nmap")):
         return
 
     console.print(f"[yellow]⏳ Ngecek Nmap ({mode})...[/yellow]")
@@ -710,16 +780,18 @@ def nuclei_scan(target, mode="cepat"):
         console.print(f"[red]Error: {str(e)}[/red]")
 
 def sqlmap_scan(target, mode="cepat"):
-    if not ensure_tool("sqlmap", "pip install sqlmap"):
+    sqlmap_cmd = ensure_sqlmap()
+    if not sqlmap_cmd:
+        console.print("[red]sqlmap tidak terinstall dan gagal di-clone secara otomatis.[/red]")
         return
 
     protocol = detect_protocol(target)
     url = f"{protocol}://{target}"
 
     if mode == "cepat":
-        command = ["sqlmap", "-u", url, "--batch", "--level=1", "--risk=1"]
+        command = sqlmap_cmd + ["-u", url, "--batch", "--level=1", "--risk=1"]
     else:
-        command = ["sqlmap", "-u", url, "--batch", "--level=5", "--risk=3", "--crawl=10"]
+        command = sqlmap_cmd + ["-u", url, "--batch", "--level=5", "--risk=3", "--crawl=10"]
 
     try:
         with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as proc:
@@ -758,7 +830,7 @@ def sqlmap_scan(target, mode="cepat"):
         console.print(f"[red]Error: {str(e)}[/red]")
 
 def hydra_attack(target, service, mode="cepat"):
-    if not ensure_tool("hydra", "pkg install hydra -y"):
+    if not ensure_tool("hydra", get_system_install_command("hydra")):
         return
 
     username_list = os.path.expanduser("~/.wordlists/usernames.txt")
@@ -833,7 +905,7 @@ def packet_sniff(interface="any", count=100, mode="cepat"):
     if os.geteuid() != 0:
         console.print("[yellow]Lewatin packet sniff (butuh akses root)[/yellow]")
         return
-    if not ensure_tool("tcpdump", "pkg install tcpdump -y"):
+    if not ensure_tool("tcpdump", get_system_install_command("tcpdump")):
         return
 
     if not os.geteuid() == 0:
@@ -1015,6 +1087,21 @@ def menu():
 
 if __name__ == "__main__":
     try:
+        # Cek dependencies Python
+        required_modules = [
+            ("rich", "rich"),
+            ("requests", "requests"),
+            ("dns.resolver", "dnspython"),
+            ("bs4", "beautifulsoup4"),
+            ("urllib3", "urllib3")
+        ]
+        for import_name, pypi_name in required_modules:
+            if os.system(f"python3 -c 'import {import_name}' > /dev/null 2>&1") != 0:
+                print(f"[⏳] Menginstall dependency Python: {pypi_name}...")
+                res = os.system(f"pip install -q {pypi_name}")
+                if res != 0:
+                    os.system(f"pip install -q --break-system-packages {pypi_name}")
+
         # Setup environment
         os.makedirs(os.path.expanduser("~/.wordlists"), exist_ok=True)
         os.makedirs(os.path.expanduser("~/.nuclei-templates"), exist_ok=True)

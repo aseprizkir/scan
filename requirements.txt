@@ -1,9 +1,8 @@
 requests
 colorama
 rich
-bs4
-whois
-futures
+beautifulsoup4
+python-whois
 stdiomask
 dnspython
-google
+googlesearch-python

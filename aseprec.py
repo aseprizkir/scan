@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import requests
 import socket
@@ -8,6 +9,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
 from googlesearch import search
+
+# Tambahkan go bin path ke PATH agar tool go bisa terdeteksi
+go_bin_path = os.path.expanduser("~/go/bin")
+if go_bin_path not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + go_bin_path
 
 console = Console()
 
@@ -23,6 +29,21 @@ def banner():
     console.print(Panel.fit(ascii_art, title="ASEPSCAN", style="cyan"))
     console.print(f"[bold yellow]Versi 5.0 | Ultimate Recon Tool[/bold yellow]\n")
     console.print(f"[bold green]Fitur Baru:[/bold green] DNS Recon + Email Harvester + Cloud Detector + CMS Detector + Port Scanner\n")
+
+def get_install_command(package_name):
+    is_termux = 'com.termux' in os.environ.get('PREFIX', '') or os.path.exists('/data/data/com.termux/files/usr/bin')
+    if is_termux:
+        return f"pkg install -y {package_name}"
+    else:
+        # Check package managers
+        if os.system("command -v apt > /dev/null 2>&1") == 0:
+            return f"sudo apt install -y {package_name}"
+        elif os.system("command -v pacman > /dev/null 2>&1") == 0:
+            return f"sudo pacman -S {package_name}"
+        elif os.system("command -v dnf > /dev/null 2>&1") == 0:
+            return f"sudo dnf install -y {package_name}"
+        else:
+            return f"installer package manager Anda untuk {package_name}"
 
 def check_tool(tool_name, install_instruksi):
     if os.system(f"command -v {tool_name} > /dev/null") != 0:
@@ -42,21 +63,21 @@ def detect_protocol(target):
     return "http"
 
 def whois_lookup(target):
-    if not check_tool("whois", "pkg install -y whois"):
+    if not check_tool("whois", get_install_command("whois")):
         return
     console.print("[yellow]⏳ Ngecek WHOIS...[/yellow]")
     result = os.popen(f"whois {target}").read()
     console.print(Panel.fit(result, title="Hasil WHOIS", style="green"))
 
 def whatweb_scan(target):
-    if not check_tool("whatweb", "pkg install -y whatweb"):
+    if not check_tool("whatweb", get_install_command("whatweb")):
         return
     console.print("[yellow]⏳ Ngecek WhatWeb...[/yellow]")
     result = os.popen(f"whatweb {target}").read()
     console.print(Panel.fit(result, title="Hasil WhatWeb", style="green"))
 
 def nmap_scan(target, mode="cepat"):
-    if not check_tool("nmap", "pkg install -y nmap"):
+    if not check_tool("nmap", get_install_command("nmap")):
         return
     console.print(f"[yellow]⏳ Ngecek Nmap ({mode})...[/yellow]")
     scan_type = "-Pn -sV -T4" if mode == "lengkap" else "-Pn -T4 -F"
@@ -64,7 +85,7 @@ def nmap_scan(target, mode="cepat"):
     console.print(Panel.fit(result, title="Hasil Nmap", style="green"))
 
 def subdomain_checker(target):
-    if not check_tool("assetfinder", "go get -u github.com/tomnomnom/assetfinder"):
+    if not check_tool("assetfinder", "go install github.com/tomnomnom/assetfinder@latest"):
         return
     console.print("[yellow]⏳ Nyari subdomain...[/yellow]")
     result = os.popen(f"assetfinder --subs-only {target}").read()
@@ -122,14 +143,16 @@ def cek_header(target):
     console.print(Panel.fit(panel_text, title="Header HTTP", style="green"))
 
 def waf_detection(target):
-    if not check_tool("wafw00f", "pip install wafw00f"):
+    pip_install_suffix = " --break-system-packages" if sys.prefix == sys.base_prefix else ""
+    if not check_tool("wafw00f", "pip install wafw00f" + pip_install_suffix):
         return
     console.print("[yellow]⏳ Ngecek WAF...[/yellow]")
     result = os.popen(f"wafw00f {target}").read()
     console.print(Panel.fit(result.strip(), title="Deteksi WAF", style="green"))
 
 def screenshot_web(target):
-    if not check_tool("webscreenshot", "pip install webscreenshot"):
+    pip_install_suffix = " --break-system-packages" if sys.prefix == sys.base_prefix else ""
+    if not check_tool("webscreenshot", "pip install webscreenshot" + pip_install_suffix):
         return
     protocol = detect_protocol(target)
     outdir = f"screenshot_{target.replace('.', '_')}"
@@ -484,11 +507,19 @@ def menu():
 if __name__ == "__main__":
     try:
         # Install dependency
-        required_modules = ["rich", "requests", "dnspython", "google"]
-        for module in required_modules:
-            if os.system(f"python3 -c 'import {module}' > /dev/null 2>&1") != 0:
-                console.print(f"[yellow]⏳ Menginstall {module}...[/yellow]")
-                os.system(f"pip install -q {module}")
+        required_modules = [
+            ("rich", "rich"),
+            ("requests", "requests"),
+            ("dns.resolver", "dnspython"),
+            ("googlesearch", "google")
+        ]
+        for import_name, pypi_name in required_modules:
+            if os.system(f"python3 -c 'import {import_name}' > /dev/null 2>&1") != 0:
+                console.print(f"[yellow]⏳ Menginstall {pypi_name}...[/yellow]")
+                res = os.system(f"pip install -q {pypi_name}")
+                if res != 0:
+                    # Retry with --break-system-packages
+                    os.system(f"pip install -q --break-system-packages {pypi_name}")
         
         menu()
     except KeyboardInterrupt:

@@ -3,7 +3,53 @@ import os
 import sys
 import subprocess
 import time
+import shutil
 from datetime import datetime
+
+def ensure_sqlmap():
+    # 1. Cek apakah perintah 'sqlmap' ada di PATH
+    if shutil.which("sqlmap") is not None:
+        return "sqlmap"
+    
+    # 2. Cek path umum untuk sqlmap.py
+    candidate_paths = [
+        os.path.expanduser("~/sqlmap/sqlmap.py"),
+        "./sqlmap/sqlmap.py",
+        "./sqlmap.py",
+        os.path.expanduser("~/sqlmap.py")
+    ]
+    for path in candidate_paths:
+        if os.path.exists(path):
+            return f"python3 {path}"
+            
+    # 3. Clone sqlmap jika tidak ditemukan
+    print("[*] sqlmap tidak ditemukan di sistem. Mencoba meng-clone dari github...")
+    sqlmap_dir = os.path.expanduser("~/sqlmap")
+    try:
+        subprocess.run(["git", "clone", "--depth", "1", "https://github.com/sqlmapproject/sqlmap.git", sqlmap_dir], check=True)
+        if os.path.exists(os.path.join(sqlmap_dir, "sqlmap.py")):
+            return f"python3 {os.path.join(sqlmap_dir, 'sqlmap.py')}"
+    except Exception as e:
+        print(f"[ERROR] Gagal clone sqlmap: {str(e)}")
+        
+    return None
+
+def get_default_wordlist():
+    paths = [
+        "/usr/share/dirb/wordlists/common.txt",
+        "/usr/share/wordlists/dirb/common.txt",
+        "/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt",
+    ]
+    # Check Termux prefix
+    prefix = os.environ.get('PREFIX', '')
+    if prefix:
+        paths.insert(0, f"{prefix}/share/dirb/wordlists/common.txt")
+        paths.insert(1, f"{prefix}/share/wordlists/dirb/common.txt")
+    
+    for path in paths:
+        if os.path.exists(path):
+            return path
+    return paths[0]
 
 # Banner ASCII
 def show_banner():
@@ -80,7 +126,8 @@ def reconnaissance_menu():
         
         elif choice == 6:
             url = input("Masukkan URL: ")
-            wordlist = input("Path wordlist (default /usr/share/dirb/wordlists/common.txt): ") or "/usr/share/dirb/wordlists/common.txt"
+            default_wl = get_default_wordlist()
+            wordlist = input(f"Path wordlist (default {default_wl}): ") or default_wl
             subprocess.run(f"dirsearch -u {url} -w {wordlist}", shell=True)
         
         elif choice == 7:
@@ -124,7 +171,8 @@ def scanning_menu():
         
         elif choice == 4:
             url = input("Masukkan URL: ")
-            wordlist = input("Path wordlist (default /usr/share/dirb/wordlists/common.txt): ") or "/usr/share/dirb/wordlists/common.txt"
+            default_wl = get_default_wordlist()
+            wordlist = input(f"Path wordlist (default {default_wl}): ") or default_wl
             subprocess.run(f"gobuster dir -u {url} -w {wordlist}", shell=True)
         
         elif choice == 5:
@@ -160,7 +208,11 @@ def exploitation_menu():
         
         if choice == 1:
             url = input("Masukkan URL target: ")
-            subprocess.run(f"sqlmap -u {url} --batch --risk=3 --level=5", shell=True)
+            sqlmap_bin = ensure_sqlmap()
+            if sqlmap_bin:
+                subprocess.run(f"{sqlmap_bin} -u {url} --batch --risk=3 --level=5", shell=True)
+            else:
+                print("[ERROR] sqlmap tidak ditemukan di sistem dan gagal dipasang secara otomatis.")
         
         elif choice == 2:
             url = input("Masukkan URL target: ")
@@ -347,20 +399,33 @@ def main():
             sys.exit(0)
 
 if __name__ == "__main__":
-    # Cek environment Kali Linux
-    if not os.path.exists('/etc/os-release'):
-        print("[ERROR] Tools ini harus dijalankan di Kali Linux")
-        sys.exit(1)
-    
-    with open('/etc/os-release') as f:
-        if 'Kali' not in f.read():
-            print("[ERROR] Tools ini dirancang khusus untuk Kali Linux")
-            sys.exit(1)
-    
-    # Cek akses root
-    if os.geteuid() != 0:
-        print("[ERROR] Tools ini membutuhkan akses root!")
-        print("Jalankan dengan: sudo ./RizkiAs.py")
-        sys.exit(1)
+    # Cek dependencies Python
+    required_modules = [
+        ("rich", "rich"),
+        ("requests", "requests"),
+        ("dns.resolver", "dnspython"),
+        ("googlesearch", "google"),
+        ("bs4", "beautifulsoup4"),
+        ("colorama", "colorama")
+    ]
+    for import_name, pypi_name in required_modules:
+        if os.system(f"python3 -c 'import {import_name}' > /dev/null 2>&1") != 0:
+            print(f"[⏳] Menginstall dependency Python: {pypi_name}...")
+            res = os.system(f"pip install -q {pypi_name}")
+            if res != 0:
+                os.system(f"pip install -q --break-system-packages {pypi_name}")
+
+    # Cek akses root (hanya warning, agar bisa dijalankan di Termux dan Linux non-root)
+    try:
+        is_root = os.geteuid() == 0
+    except AttributeError:
+        is_root = False
+
+    if not is_root:
+        print("[WARNING] Anda tidak berjalan sebagai root.")
+        print("Beberapa tools (seperti arpspoof, ettercap, nmap OS detection, dll.) mungkin tidak berfungsi dengan baik.")
+        print("Jika di Linux biasa, disarankan menjalankan dengan: sudo python3 run.py")
+        print("")
+        time.sleep(2)
     
     main()
